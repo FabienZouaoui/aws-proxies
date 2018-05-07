@@ -1,0 +1,93 @@
+#---------------------------------------------------------------------
+# Global settings
+#---------------------------------------------------------------------
+global
+    #log         127.0.0.1 local2 # Haproxy cannot log to stdout ?
+    chroot      /var/lib/haproxy
+    pidfile     /var/run/haproxy.pid
+    maxconn     8000
+    user        haproxy
+    group       haproxy
+    daemon
+
+    # turn on stats unix socket
+    stats socket /var/lib/haproxy/stats
+
+#---------------------------------------------------------------------
+# common defaults that all the 'listen' and 'backend' sections will
+# use if not designated in their block
+#---------------------------------------------------------------------
+defaults
+    mode                    http
+    option                  dontlognull
+    option http-server-close
+    #option forwardfor       except 127.0.0.0/8
+    option                  redispatch
+    retries                 3
+    timeout http-request    10s
+    timeout queue           1m
+    timeout connect         10s
+    timeout client          1m
+    timeout server          1m
+    timeout http-keep-alive 10s
+    timeout check           10s
+    maxconn                 8000
+
+#---------------------------------------------------------------------
+# Statistics
+#---------------------------------------------------------------------
+listen stats
+    bind *:81
+    mode http
+    stats enable
+    stats realm Haproxy\ Statistics 
+    stats uri /haproxy_stats
+    stats hide-version
+    stats auth admin:admin
+
+#---------------------------------------------------------------------
+# main frontend which proxys to the backends
+#---------------------------------------------------------------------
+#frontend main
+#    bind *:8000
+#    mode tcp
+#    timeout client  10s
+#    default_backend aws_proxies
+#
+#---------------------------------------------------------------------
+# TCP backend
+#---------------------------------------------------------------------
+#listen aws_proxies
+#    bind *:8000
+#    mode tcp
+#    option redispatch
+#    option tcplog
+#    balance roundrobin
+#    maxconn 8000
+#    timeout connect 5s
+#    timeout server  10s   
+#{% for instance in instances %}
+#    server {{ instance.aws_instance['InstanceId'] }} 127.0.0.1:{{ instance.port }} check
+#{% endfor %}
+
+frontend aws_proxies
+    bind *:8000
+    mode tcp
+    maxconn 8000
+    option tcplog
+    timeout client 1m
+    default_backend aws_proxies
+
+backend aws_proxies
+    mode tcp
+    fullconn 8000
+    option tcplog
+    option redispatch
+    balance roundrobin
+    timeout connect 5s
+    timeout server  10s   
+{% for instance in instances %}
+    {% for port in instance.ports %}
+        server {{ instance.aws_instance['InstanceId'] }}--{{ port }} 127.0.0.1:{{ port }} check
+    {% endfor %}
+{% endfor %}
